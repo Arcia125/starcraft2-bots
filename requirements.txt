@@ -1,0 +1,3 @@
+numpy==1.14.5
+s2clientprotocol==4.7.70154.0
+sc2==0.10.6
