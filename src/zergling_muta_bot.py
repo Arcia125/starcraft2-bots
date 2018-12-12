@@ -11,9 +11,10 @@ import src.bot_logger as bot_logger
 from src.helpers import roundrobin, between
 from src.bot_actions import build_building_once, get_workers_per_townhall, has_enemies_nearby
 from src.zerg_actions import get_random_larva, build_drone, build_zergling, build_overlord, upgrade_zergling_speed, get_forces, geyser_has_extractor
+from src.zerg_bot_base import ZergBotBase
 
 
-class ZerglingMutaBot(sc2.BotAI):
+class ZerglingMutaBot(ZergBotBase):
     @property
     def is_booming_time(self):
         now = self.time
@@ -189,6 +190,7 @@ class ZerglingMutaBot(sc2.BotAI):
                 if await self.should_build_lair():
                     if not self.already_pending(UnitTypeId.LAIR) > 0 and not self.units(UnitTypeId.LAIR).exists:
                         bot_logger.log_action(self, "building lair")
+                        print(self.units(UnitTypeId.LAIR))
                         await self.do(self.townhalls.ready.first.build(UnitTypeId.LAIR))
             elif self.should_build_spire():
                 bot_logger.log_action(self, "building spire")

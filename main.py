@@ -3,7 +3,7 @@ import sc2
 from sc2 import run_game, maps, Race, Difficulty, Result
 from sc2.player import Bot, Computer
 from src.protoss_bot import BalancedProtossBot
-from src.zerg_bot import ZerglingMutaBot
+from src.zergling_muta_bot import ZerglingMutaBot
 from src.terran_bot import MarineBot
 import os
 import uuid
