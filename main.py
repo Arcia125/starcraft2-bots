@@ -54,7 +54,7 @@ def main():
     for _ in range(20):
         players = [
             get_bot(Race.Zerg),
-            Computer(Race.Random, Difficulty.Hard)
+            Computer(Race.Random, Difficulty.Harder)
         ]
 
         # players = [

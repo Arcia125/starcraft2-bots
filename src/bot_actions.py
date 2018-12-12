@@ -1,4 +1,4 @@
-from sc2 import BotAI
+from sc2 import BotAI, AbilityId
 from sc2.position import Point2, Point3
 from sc2.unit import Unit
 from typing import Union
@@ -21,3 +21,8 @@ def get_workers_per_townhall(bot: BotAI) -> int:
 def has_enemies_nearby(bot: BotAI, position: Union[Unit, Point2, Point3], distance: Union[int, float]=20) -> bool:
     """Returns whether there are enemies within the distance of the position"""
     return bot.known_enemy_units.closer_than(distance, position)
+
+
+def is_researching(bot: BotAI, building: Unit, ability_id: AbilityId) -> bool:
+    """Returns whether the given ability_id is in the orders of the """
+    return sum([order.ability.id == ability_id for order in building.orders]) > 1

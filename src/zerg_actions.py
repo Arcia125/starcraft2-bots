@@ -5,6 +5,7 @@ from sc2.units import Units
 from typing import Union
 
 import src.bot_logger as bot_logger
+from src.bot_actions import is_researching
 
 COMBAT_UNIT_TYPES = [
     UnitTypeId.ZERGLING,
@@ -66,3 +67,23 @@ def get_forces(bot: BotAI) -> Units:
 
 def geyser_has_extractor(bot: BotAI, geyser: Unit, distance: Union[int, float]=1.0):
     return bot.units(UnitTypeId.EXTRACTOR).closer_than(distance, geyser)
+
+
+def is_already_researching_lair(bot: BotAI, building: Unit) -> bool:
+    return is_researching(bot, building, AbilityId.UPGRADETOLAIR_LAIR)
+
+
+def already_researching_lair(bot: BotAI) -> bool:
+    return sum(
+        [is_already_researching_lair(bot, hatch) for hatch in bot.units(UnitTypeId.HATCHERY)]) > 1
+
+
+def is_already_researching_hive(bot: BotAI, building: Unit) -> bool:
+    return is_researching(bot, building, AbilityId.UPGRADETOHIVE_HIVE)
+
+
+def already_researching_hive(bot: BotAI) -> bool:
+    return sum(
+        [is_already_researching_hive(bot, lair)
+         for lair in bot.units(UnitTypeId.LAIR)]
+    ) > 1

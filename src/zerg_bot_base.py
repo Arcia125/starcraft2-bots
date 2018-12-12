@@ -1,4 +1,4 @@
-from abc import ABC, abstractmethod, abstractproperty
+from abc import ABC, abstractmethod
 from sc2 import BotAI
 from sc2.unit import Unit
 from sc2.units import Units
@@ -10,17 +10,20 @@ class ZergBotBase(ABC, BotAI):
     def __init__(self):
         super().__init__()
 
-    @abstractproperty
+    @property
+    @abstractmethod
     def is_booming_time(self) -> bool:
         """override to allow the bot to determine if it should boom"""
         pass
 
-    @abstractproperty
+    @property
+    @abstractmethod
     def is_rushing_time(self) -> bool:
         """override to allow the bot to determine if it should rush"""
         pass
 
-    @abstractproperty
+    @property
+    @abstractmethod
     def is_rushing(self) -> bool:
         """override to allow the bot to determine if it is currently rushing"""
         pass
@@ -44,6 +47,15 @@ class ZergBotBase(ABC, BotAI):
     def should_build_spire(self) -> bool:
         """override to allow the bot to determine if it should build a spire"""
         pass
+
+    @abstractmethod
+    def should_build_gas(self) -> bool:
+        """override to allow the bot to determine if it should build gas"""
+        pass
+
+    @abstractmethod
+    def should_build_expansion(self) -> bool:
+        """override to allow the bot to determine if it should build an expansion"""
 
     @abstractmethod
     def get_rally_point(self) -> Point2:

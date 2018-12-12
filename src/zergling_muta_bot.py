@@ -10,7 +10,7 @@ from typing import List
 import src.bot_logger as bot_logger
 from src.helpers import roundrobin, between
 from src.bot_actions import build_building_once, get_workers_per_townhall, has_enemies_nearby
-from src.zerg_actions import get_random_larva, build_drone, build_zergling, build_overlord, upgrade_zergling_speed, get_forces, geyser_has_extractor
+from src.zerg_actions import get_random_larva, build_drone, build_zergling, build_overlord, upgrade_zergling_speed, get_forces, geyser_has_extractor, already_researching_lair, already_researching_hive
 from src.zerg_bot_base import ZergBotBase
 
 
@@ -137,6 +137,9 @@ class ZerglingMutaBot(ZergBotBase):
         return self.use_mutalisk_strategy and not self.units(
             UnitTypeId.SPIRE).ready.exists and not self.already_pending(UnitTypeId.SPIRE)
 
+    async def should_build_expansion(self):
+        return (not self.already_pending(UnitTypeId.HATCHERY) or (self.booming and self.time > 500)) and await self.get_next_expansion() and self.can_afford(UnitTypeId.HATCHERY) and (get_forces(self).ready.amount > 10 or self.expansion_count < 1) and self.time - self.last_expansion_time > 10
+
     async def on_step(self, iteration):
         townhalls_under_attack = self.get_townhalls_under_attack()
         is_under_attack = townhalls_under_attack.amount > 0
@@ -188,9 +191,8 @@ class ZerglingMutaBot(ZergBotBase):
         if self.units(UnitTypeId.SPAWNINGPOOL).ready.exists and iteration % 50 == 0:
             if not self.units(UnitTypeId.LAIR).ready.exists and self.townhalls.first:
                 if await self.should_build_lair():
-                    if not self.already_pending(UnitTypeId.LAIR) > 0 and not self.units(UnitTypeId.LAIR).exists:
+                    if not self.units(UnitTypeId.LAIR).exists and not already_researching_lair(self):
                         bot_logger.log_action(self, "building lair")
-                        print(self.units(UnitTypeId.LAIR))
                         await self.do(self.townhalls.ready.first.build(UnitTypeId.LAIR))
             elif self.should_build_spire():
                 bot_logger.log_action(self, "building spire")
@@ -199,7 +201,7 @@ class ZerglingMutaBot(ZergBotBase):
             if self.should_build_hive():
                 lair = self.units(UnitTypeId.LAIR).ready.noqueue.exists and self.units(UnitTypeId.LAIR).ready.noqueue.closest_to(
                     self.start_location)
-                if lair and not self.already_pending(UnitTypeId.HIVE):
+                if lair and not already_researching_hive(self):
                     await self.do(lair.build(UnitTypeId.HIVE))
 
         if not (is_under_attack or has_been_under_attack_recently) and self.should_build_drones():
@@ -212,7 +214,7 @@ class ZerglingMutaBot(ZergBotBase):
                 await self.do(queen(AbilityId.EFFECT_INJECTLARVA, self.townhalls.closest_to(queen)))
         townhall_count = self.townhalls.ready.amount
         if townhall_count < 3 or self.time > 500 and not has_been_under_attack_recently and get_workers_per_townhall(self) > 14:
-            if (not self.already_pending(UnitTypeId.HATCHERY) or (self.booming and self.time > 500)) and await self.get_next_expansion() and self.can_afford(UnitTypeId.HATCHERY) and (get_forces(self).ready.amount > 10 or self.expansion_count < 1) and self.time - self.last_expansion_time > 10:
+            if await self.should_build_expansion():
                 self.expansion_count += 1
                 self.last_expansion_time = self.time
                 bot_logger.log_action(
