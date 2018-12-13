@@ -47,9 +47,20 @@ def get_bot(bot_race: Race = None):
     return choice([get_protoss_bot, get_zerg_bot, get_terran_bot])()
 
 
+def get_replay_name(players, game_map) -> str:
+    replay_part = '{}-{}-{}-vs-{}'.format(
+        game_map.name, players[0].__class__.__name__, players[1].race, players[1].difficulty)
+    unique_str = str(uuid.uuid4())[:5]
+    replay_name = os.path.join(
+        os.getcwd(), 'replays', '{}_{}'.format(replay_part, unique_str))
+    sanitized_replay_name = replay_name.replace('.', '_')
+    return '{}.SC2Replay'.format(sanitized_replay_name)
+
+
 def main():
     record = []
-    game_map = get_random_map()
+    # game_map = get_random_map()
+    game_map = maps.get(all_map_names[1])
     players = []
     for _ in range(20):
         players = [
@@ -77,16 +88,17 @@ def main():
         #     Bot(Race.Terran, MarineBot()),
         #     Computer(Race.Random, Difficulty.Medium)
         # ]
-
+        replay_name = get_replay_name(players, game_map)
         result = run_game(game_map, players, realtime=False,
-                          save_replay_as=os.path.join(os.getcwd(), 'replays', str(uuid.uuid4())))
+                          save_replay_as=replay_name)
         record.append(result)
         print('RESULT {}'.format(result))
         print(record)
     victory_count = sum(map(lambda x: x == Result.Victory, record))
     defeat_count = len(record) - victory_count
-    print('On map {} the bot {} had a record of {} wins to {} losses playing against computer {} on {} difficulty'.format(
-        game_map, players[0], victory_count, defeat_count, players[1], players[1].difficulty))
+    result_message = 'On map {} the bot {} had a record of {} wins to {} losses playing against computer {}'.format(
+        game_map, players[0], victory_count, defeat_count, players[1])
+    print(result_message)
 
 
 if __name__ == '__main__':
