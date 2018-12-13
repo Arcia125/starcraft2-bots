@@ -1,4 +1,5 @@
 import itertools
+from functools import wraps
 from typing import Callable, Union, List, Tuple
 
 
@@ -59,7 +60,26 @@ def between(value: Union[int, float], minimum: Union[int, float], maximum: Union
 
 
 def value_between_any(value: Union[int, float], items: List[Tuple[Union[int, float], Union[int, float]]]) -> bool:
+    """Returns whether the given value falls between any of the ranges in the given list.
+    >>> value_between_any(5, [(1, 6)])
+    True
+    >>> value_between_any(10, [(1, 6), (6, 12)])
+    True
+    >>> value_between_any(100, [(1, 6), (6, 12)])
+    False
+    """
     return any(between(value, minimum, maximum) for minimum, maximum in items)
+
+
+def property_cache_forever(f):
+    f.cached = None
+
+    @wraps(f)
+    def inner(self):
+        if f.cached is None:
+            f.cached = f(self)
+        return f.cached
+    return property(inner)
 
 
 if __name__ == '__main__':

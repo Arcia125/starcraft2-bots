@@ -12,31 +12,37 @@ class ZergBotBase(ABC, BotAI):
 
     @property
     @abstractmethod
-    def is_booming_time(self) -> bool:
+    def _is_booming_time(self) -> bool:
         """override to allow the bot to determine if it should boom"""
         pass
 
     @property
     @abstractmethod
-    def is_rushing_time(self) -> bool:
+    def _is_rushing_time(self) -> bool:
         """override to allow the bot to determine if it should rush"""
         pass
 
     @property
     @abstractmethod
-    def is_mutalisk_time(self) -> bool:
+    def _is_mutalisk_time(self) -> bool:
         """override to allow the bot to determine if it should build / tech mutalisks"""
         pass
 
     @property
     @abstractmethod
-    def is_ultralisk_time(self) -> bool:
+    def _is_ultralisk_time(self) -> bool:
         """override to allow the bot to determine if it should build / tech ultralisks"""
         pass
 
     @property
     @abstractmethod
-    def is_rushing(self) -> bool:
+    def _is_roach_time(self) -> bool:
+        """override to allow the bot to determine if it should build / tech roaches"""
+        pass
+
+    @property
+    @abstractmethod
+    def _is_rushing(self) -> bool:
         """override to allow the bot to determine if it is currently rushing"""
         pass
 

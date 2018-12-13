@@ -3,7 +3,7 @@ import sc2
 from sc2 import run_game, maps, Race, Difficulty, Result
 from sc2.player import Bot, Computer
 from src.protoss_bot import BalancedProtossBot
-from src.zergling_muta_bot import ZerglingMutaBot
+from src.balanced_zerg_bot import BalancedZergBot
 from src.terran_bot import MarineBot
 import os
 import uuid
@@ -30,7 +30,7 @@ def get_protoss_bot():
 
 
 def get_zerg_bot():
-    return Bot(Race.Zerg, ZerglingMutaBot())
+    return Bot(Race.Zerg, BalancedZergBot())
 
 
 def get_terran_bot():
