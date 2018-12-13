@@ -1,6 +1,6 @@
 import random
 import sc2
-import logging
+import math
 from sc2.unit import Unit
 from sc2.units import Units
 from sc2.constants import AbilityId, BuffId, UnitTypeId
@@ -8,17 +8,47 @@ from sc2.unit_command import UnitCommand
 from typing import List
 
 import src.bot_logger as bot_logger
-from src.helpers import roundrobin, between
-from src.bot_actions import build_building_once, get_workers_per_townhall, has_enemies_nearby
-from src.zerg_actions import get_random_larva, build_drone, build_zergling, build_overlord, upgrade_zergling_speed, get_forces, geyser_has_extractor, already_researching_lair, already_researching_hive
+from src.helpers import roundrobin, between, value_between_any
+from src.bot_actions import build_building_once, get_workers_per_townhall, get_enemies_near_position
+from src.zerg_actions import get_random_larva, build_drone, build_zergling, build_overlord, upgrade_zergling_speed, get_forces, geyser_has_extractor, already_researching_lair, already_researching_hive, ZERG_MELEE_WEAPON_UPGRADES, ZERG_GROUND_ARMOR_UPGRADES, ZERG_FLYING_WEAPON_UPGRADES, ZERG_FLYING_ARMOR_UPGRADES, ULTRALISK_DEN_ABILITIES
 from src.zerg_bot_base import ZergBotBase
 
 
 class ZerglingMutaBot(ZergBotBase):
+    def __init__(self,
+                 boom_timings=[
+            (-1, 420),
+            (475, 775),
+            (800, 1000),
+            (1500, 1900),
+            (2000, math.inf)
+                     ],
+        rush_timings=[
+            (430, 475),
+            (800, 850),
+            (950, 1000),
+            (1200, 1300),
+            (1900, 2500),
+            (2600, math.inf)
+                 ],
+        mutalisk_timings=[
+            (-1, 700),
+            (1000, math.inf)
+                 ],
+        ultralisk_timings=[
+            (700, math.inf)
+                 ]
+    ):
+        super().__init__()
+        self.boom_timings = boom_timings
+        self.rush_timings = rush_timings
+        self.mutalisk_timings = mutalisk_timings
+        self.ultralisk_timings = ultralisk_timings
+
     @property
     def is_booming_time(self):
         now = self.time
-        return any(between(now, minimum, maximum) for minimum, maximum in self.boom_timings)
+        return value_between_any(now, self.boom_timings)
 
     @property
     def is_booming(self):
@@ -27,11 +57,22 @@ class ZerglingMutaBot(ZergBotBase):
     @property
     def is_rushing_time(self):
         now = self.time
-        return any(between(now, minimum, maximum) for minimum, maximum in self.rush_timings)
+        return value_between_any(now, self.rush_timings)
+
+    @property
+    def is_mutalisk_time(self):
+        now = self.time
+        return value_between_any(now, self.mutalisk_timings)
+
+    @property
+    def is_ultralisk_time(self):
+        now = self.time
+        return value_between_any(now, self.ultralisk_timings)
 
     @property
     def is_rushing(self):
-        return self.is_rushing_time or self.units(UnitTypeId.MUTALISK).ready.amount > 10
+        # TODO add conditions
+        return self.is_rushing_time
 
     def get_has_been_under_attack_recently(self, is_under_attack=False) -> bool:
         recent_combat = self.time - \
@@ -48,7 +89,7 @@ class ZerglingMutaBot(ZergBotBase):
             await self.distribute_workers()
 
     def get_townhalls_under_attack(self) -> Units:
-        return self.townhalls.filter(lambda townhall: has_enemies_nearby(bot=self, position=townhall, distance=20))
+        return self.townhalls.filter(lambda townhall: get_enemies_near_position(bot=self, position=townhall, distance=20).exists)
 
     def manage_booming(self):
         if self.is_booming:
@@ -74,6 +115,26 @@ class ZerglingMutaBot(ZergBotBase):
                     self, '** ending rush period {} **'.format(self.time))
                 self.rushing = False
 
+    def manage_mutalisk_strategy(self):
+        if self.is_mutalisk_time:
+            if not self.use_mutalisk_strategy:
+                bot_logger.log_action(self, 'enabling mutalisk strategy')
+                self.use_mutalisk_strategy = True
+        else:
+            if self.use_mutalisk_strategy:
+                bot_logger.log_action(self, 'disabling mutalisk strategy')
+                self.use_mutalisk_strategy = False
+
+    def manage_ultralisk_strategy(self):
+        if self.is_ultralisk_time:
+            if not self.use_ultralisk_strategy:
+                bot_logger.log_action(self, 'enabling ultralisk strategy')
+                self.use_ultralisk_strategy = True
+        else:
+            if self.use_ultralisk_strategy:
+                bot_logger.log_action(self, 'disabling ultralisk strategy')
+                self.use_ultralisk_strategy = False
+
     def on_start(self):
         self.max_worker_count = 100
         self.ideal_workers_per_hatch = 24
@@ -82,52 +143,20 @@ class ZerglingMutaBot(ZergBotBase):
         self.use_mutalisk_strategy = True
         # ? how / when should this be enabled
         self.use_ultralisk_strategy = False
+        self.evolution_chamber_upgrades = roundrobin(
+            ZERG_MELEE_WEAPON_UPGRADES, ZERG_GROUND_ARMOR_UPGRADES)
+        self.spire_upgrades = roundrobin(
+            ZERG_FLYING_WEAPON_UPGRADES, ZERG_FLYING_ARMOR_UPGRADES)
+        self.ultralisk_cavern_upgrades = ULTRALISK_DEN_ABILITIES
         self.booming = True
-        self.boom_timings = [
-            (0, 420),
-            (475, 775),
-            (800, 1000),
-            (1500, 1900)
-        ]
         self.rushing = False
-        self.rush_timings = [
-            (430, 475),
-            (800, 850),
-            (950, 1000),
-            (1200, 1300),
-            (1900, 2500)
-        ]
         self.has_been_attacked = False
         self.last_defensive_situation_time = None
         self.expansion_count = 0
         self.last_expansion_time = 0
-        self.evolution_chamber_melee_attack_upgrades = [
-            AbilityId.RESEARCH_ZERGMELEEWEAPONSLEVEL1,
-            AbilityId.RESEARCH_ZERGMELEEWEAPONSLEVEL2,
-            AbilityId.RESEARCH_ZERGMELEEWEAPONSLEVEL3
-        ]
-        self.evolution_chamber_armor_upgrades = [
-            AbilityId.RESEARCH_ZERGGROUNDARMORLEVEL1,
-            AbilityId.RESEARCH_ZERGGROUNDARMORLEVEL1,
-            AbilityId.RESEARCH_ZERGGROUNDARMORLEVEL2
-        ]
-        self.evolution_chamber_upgrades = roundrobin(
-            self.evolution_chamber_melee_attack_upgrades, self.evolution_chamber_armor_upgrades)
-        self.spire_attack_upgrades = [
-            AbilityId.RESEARCH_ZERGFLYERATTACKLEVEL1,
-            AbilityId.RESEARCH_ZERGFLYERATTACKLEVEL2,
-            AbilityId.RESEARCH_ZERGFLYERATTACKLEVEL3
-        ]
-        self.spire_defense_upgrades = [
-            AbilityId.RESEARCH_ZERGFLYERARMORLEVEL1,
-            AbilityId.RESEARCH_ZERGFLYERARMORLEVEL2,
-            AbilityId.RESEARCH_ZERGFLYERARMORLEVEL3
-        ]
-        self.spire_upgrades = roundrobin(
-            self.spire_attack_upgrades, self.spire_defense_upgrades)
 
     async def should_build_lair(self):
-        return self.can_afford(UnitTypeId.LAIR) and await self.can_cast(self.townhalls.first, AbilityId.UPGRADETOLAIR_LAIR)
+        return not self.units(UnitTypeId.HIVE) and self.can_afford(UnitTypeId.LAIR) and await self.can_cast(self.townhalls.first, AbilityId.UPGRADETOLAIR_LAIR)
 
     def should_build_hive(self):
         return self.units(UnitTypeId.INFESTATIONPIT).ready.exists and not self.units(
@@ -138,26 +167,32 @@ class ZerglingMutaBot(ZergBotBase):
             UnitTypeId.SPIRE).ready.exists and not self.already_pending(UnitTypeId.SPIRE)
 
     async def should_build_expansion(self):
+        if self.state.score.collection_rate_minerals < 600 and self.time > 200:
+            return True
         return (not self.already_pending(UnitTypeId.HATCHERY) or (self.booming and self.time > 500)) and await self.get_next_expansion() and self.can_afford(UnitTypeId.HATCHERY) and (get_forces(self).ready.amount > 10 or self.expansion_count < 1) and self.time - self.last_expansion_time > 10
 
-    async def on_step(self, iteration):
+    async def on_game_step(self, iteration):
+        # print('LOST ARMY: {} KILLED ARMY: {} MINERALS GAINED PER SECOND: {}'.format(
+        #     self.state.score.lost_minerals_army, self.state.score.killed_minerals_army, self.state.score.collection_rate_minerals))
         townhalls_under_attack = self.get_townhalls_under_attack()
         is_under_attack = townhalls_under_attack.amount > 0
-        if iteration == 0:
-            await self.first_iteration()
         if iteration % 8 == 0:
             self.manage_booming()
             self.manage_rushing()
+            self.manage_mutalisk_strategy()
+            self.manage_ultralisk_strategy()
             if is_under_attack:
                 self.last_defensive_situation_time = self.time
                 # pull drones from hatcheries that are under attack
                 actions = []
                 for townhall in townhalls_under_attack:
+                    is_main = townhall.distance_to(self.start_location) > 10
                     drones = self.units(
                         UnitTypeId.DRONE).closer_than(20, townhall)
                     if drones.exists:
                         for drone in drones:
-                            actions.append(drone.move(self.start_location))
+                            if not is_main:
+                                actions.append(drone.move(self.start_location))
                 await self.do_actions(actions)
 
         has_been_under_attack_recently = self.get_has_been_under_attack_recently(
@@ -167,6 +202,7 @@ class ZerglingMutaBot(ZergBotBase):
             for townhall in self.townhalls.ready.noqueue:
                 if self.units(UnitTypeId.QUEEN).ready.closer_than(5, townhall).amount < 1:
                     if self.can_afford(UnitTypeId.QUEEN) and self.units(UnitTypeId.SPAWNINGPOOL).ready.exists and not self.already_pending(UnitTypeId.QUEEN):
+                        bot_logger.log_action(self, 'building queen')
                         await self.do(townhall.train(UnitTypeId.QUEEN))
 
         # we're losing, go for broke.
@@ -179,7 +215,7 @@ class ZerglingMutaBot(ZergBotBase):
                 await self.do_actions(actions)
             return
 
-        if iteration % 150 == 0:
+        if iteration % 50 == 0:
             await self.distribute_workers()
             await self.set_rally_points()
 
@@ -191,7 +227,7 @@ class ZerglingMutaBot(ZergBotBase):
         if self.units(UnitTypeId.SPAWNINGPOOL).ready.exists and iteration % 50 == 0:
             if not self.units(UnitTypeId.LAIR).ready.exists and self.townhalls.first:
                 if await self.should_build_lair():
-                    if not self.units(UnitTypeId.LAIR).exists and not already_researching_lair(self):
+                    if not self.units(UnitTypeId.LAIR).ready.exists and not already_researching_lair(self):
                         bot_logger.log_action(self, "building lair")
                         await self.do(self.townhalls.ready.first.build(UnitTypeId.LAIR))
             elif self.should_build_spire():
@@ -202,6 +238,7 @@ class ZerglingMutaBot(ZergBotBase):
                 lair = self.units(UnitTypeId.LAIR).ready.noqueue.exists and self.units(UnitTypeId.LAIR).ready.noqueue.closest_to(
                     self.start_location)
                 if lair and not already_researching_hive(self):
+                    bot_logger.log_action(self, "building hive")
                     await self.do(lair.build(UnitTypeId.HIVE))
 
         if not (is_under_attack or has_been_under_attack_recently) and self.should_build_drones():
@@ -224,35 +261,33 @@ class ZerglingMutaBot(ZergBotBase):
         await self.micro_army(iteration=iteration, is_under_attack=is_under_attack, townhalls_under_attack=townhalls_under_attack)
 
     def get_rally_point(self):
-        return self.game_info.map_center if self.rushing else self.townhalls.center
+        return self.game_info.map_center if self.rushing else self.townhalls.center.towards(self.game_info.map_center, 25)
 
     def rally_building(self, building, rally_point=None):
         return self.do(building(AbilityId.RALLY_BUILDING, rally_point if rally_point else self.get_rally_point()))
 
     async def set_rally_points(self):
         bot_logger.log_action(self, 'setting rally points')
+        rally_units = AbilityId.RALLY_HATCHERY_UNITS
+        rally_workers = AbilityId.RALLY_HATCHERY_WORKERS
+        rally_point = self.get_rally_point()
+        actions = []
         for townhall in self.townhalls.ready:
-            available_townhall_abilities = await self.get_available_abilities(townhall)
-            if AbilityId.RALLY_BUILDING in available_townhall_abilities:
-                await self.rally_building(townhall)
-                closest_minerals = self.state.mineral_field.closest_to(
-                    townhall)
-                await self.do(townhall(AbilityId.RALLY_WORKERS, closest_minerals))
+            actions.append(townhall(rally_units, rally_point))
+            actions.append(
+                townhall(rally_workers, self.state.mineral_field.closest_to(townhall)))
+        await self.do_actions(actions)
 
     async def micro_army(self, iteration=None, is_under_attack=False, townhalls_under_attack=[]):
         actions = []
-        actions = actions + \
-            self.micro_idle(is_under_attack=is_under_attack)
-        actions = actions + \
-            self.micro_zerglings(
-                is_under_attack=is_under_attack, townhalls_under_attack=townhalls_under_attack)
-        actions = actions + \
-            self.micro_mutalisks(
-                is_under_attack=is_under_attack, townhalls_under_attack=townhalls_under_attack)
+        actions = actions + self.micro_idle(is_under_attack=is_under_attack)
+        actions = actions + self.micro_zerglings(
+            is_under_attack=is_under_attack, townhalls_under_attack=townhalls_under_attack)
+        actions = actions + self.micro_mutalisks(
+            is_under_attack=is_under_attack, townhalls_under_attack=townhalls_under_attack)
         actions = actions + \
             self.micro_ultralisks(is_under_attack=is_under_attack)
-        actions = actions + \
-            self.micro_overlords(iteration)
+        actions = actions + self.micro_overlords(iteration)
         await self.do_actions(actions)
 
     def micro_idle(self, is_under_attack=False) -> List[UnitCommand]:
@@ -267,20 +302,20 @@ class ZerglingMutaBot(ZergBotBase):
         zerglings = self.units(unit_id).ready
         actions = []
         for zergling in zerglings:
-            enemy_threats = self.known_enemy_units.filter(
-                lambda x: x.can_attack_ground and not x.is_flying).closer_than(10, zergling)
-            if townhalls_under_attack:
-                actions.append(zergling.attack(self.known_enemy_units.closest_to(
-                    Units(townhalls_under_attack, self._game_data).closest_to(zergling))))
-                continue
+            enemy_threats = get_enemies_near_position(
+                self, zergling, 15, unit_filter=lambda x: x.can_attack_ground and not x.is_flying)
             if enemy_threats.exists:
                 closest_enemy = enemy_threats.sorted_by_distance_to(
                     zergling).first
                 actions.append(zergling.attack(closest_enemy))
+            elif townhalls_under_attack:
+                actions.append(zergling.attack(self.known_enemy_units.closest_to(
+                    Units(townhalls_under_attack, self._game_data).closest_to(zergling))))
+                continue
             elif is_under_attack:
                 target = self.known_enemy_units.closest_to(zergling)
                 actions.append(zergling.attack(target))
-            elif self.rushing or self.supply_used > 190:
+            elif self.state.score.used_minerals_army + (self.state.score.used_vespene_army * 2) > 4000 and self.rushing or self.supply_used > 190:
                 target = self.select_target()
                 actions.append(zergling.attack(target))
         return actions
@@ -293,18 +328,18 @@ class ZerglingMutaBot(ZergBotBase):
             if mutalisk.health_percentage < .33:
                 actions.append(mutalisk.move(self.start_location))
                 continue
-            flying_threats = self.known_enemy_units.filter(
-                lambda x: x.can_attack_air).closer_than(15, mutalisk)
-            if townhalls_under_attack:
-                actions.append(mutalisk.attack(self.known_enemy_units.closest_to(
-                    Units(townhalls_under_attack, self._game_data).closest_to(mutalisk))))
-                continue
+            flying_threats = get_enemies_near_position(
+                self, mutalisk, 18, unit_filter=lambda x: x.can_attack_air)
             if flying_threats.exists:
                 actions.append(mutalisk.attack(
                     flying_threats.closest_to(mutalisk)))
                 continue
-            enemy_threats = self.known_enemy_units.exclude_type(UnitTypeId.LARVA).filter(
-                lambda x: x.health <= 50 or x.is_attacking).closer_than(10, mutalisk)
+            elif townhalls_under_attack:
+                actions.append(mutalisk.attack(self.known_enemy_units.closest_to(
+                    Units(townhalls_under_attack, self._game_data).closest_to(mutalisk))))
+                continue
+            enemy_threats = get_enemies_near_position(
+                self, mutalisk, 18, unit_filter=lambda x: x.health <= 50 or x.is_attacking).exclude_type(UnitTypeId.LARVA)
             if enemy_threats.exists:
                 closest_enemy = enemy_threats.sorted_by_distance_to(
                     mutalisk).first
@@ -317,7 +352,7 @@ class ZerglingMutaBot(ZergBotBase):
                 target = self.known_enemy_units.random_or(
                     self.known_enemy_structures.random_or(self.enemy_start_locations[0]))
                 actions.append(mutalisk.attack(target))
-            elif self.rushing or self.supply_used > 190:
+            elif self.state.score.used_minerals_army + (self.state.score.used_vespene_army * 2) > 4000 and self.rushing or self.supply_used > 190:
                 target = self.select_target()
                 actions.append(mutalisk.attack(target))
         return actions
@@ -327,8 +362,8 @@ class ZerglingMutaBot(ZergBotBase):
         ultralisks = self.units(unit_id).ready
         actions = []
         for ultralisk in ultralisks:
-            enemy_threats = self.known_enemy_units.filter(
-                lambda x: x.can_attack_ground).closer_than(10, ultralisk)
+            enemy_threats = get_enemies_near_position(
+                self, ultralisk, 15, unit_filter=lambda x: x.can_attack_ground)
             if enemy_threats.exists:
                 closest_enemy = enemy_threats.closest_to(ultralisk)
                 actions.append(ultralisk.attack(closest_enemy))
@@ -336,23 +371,37 @@ class ZerglingMutaBot(ZergBotBase):
                 target = self.known_enemy_units.random_or(
                     self.known_enemy_structures.random_or(self.enemy_start_locations[0]))
                 actions.append(ultralisk.attack(target))
-            elif self.rushing or self.supply_used > 190:
+            elif self.state.score.used_minerals_army + (self.state.score.used_vespene_army * 2) > 4000 and self.rushing or self.supply_used > 190:
                 target = self.select_target()
                 actions.append(ultralisk.attack(target))
         return actions
 
-    def micro_overlords(self, iteration) -> List[UnitCommand]:
+    def micro_overlords(self, iteration, be_cowardly=True, spread_creep=True, spread_out=True) -> List[UnitCommand]:
         unit_id = UnitTypeId.OVERLORD
         overlords = self.units(unit_id).ready
         actions = []
-        if iteration % 50 == 0 and self.units(UnitTypeId.LAIR).ready.exists or self.units(UnitTypeId.HIVE).ready.exists:
+        if spread_creep and iteration % 50 == 0 and self.units(UnitTypeId.LAIR).ready.exists or self.units(UnitTypeId.HIVE).ready.exists:
             for overlord in overlords:
                 actions.append(overlord(AbilityId.BEHAVIOR_GENERATECREEPON))
-        if iteration % 10 == 0 and self.time % 60 < 1 and self.time > 300:
-            for townhall in self.townhalls.ready:
-                for overlord in self.units(unit_id).ready.idle.closer_than(10, townhall):
+        if spread_out:
+            if iteration % 10 == 0 and self.time % 60 < 1 and self.time > 300:
+                for townhall in self.townhalls.ready:
+                    for overlord in self.units(unit_id).ready.idle.closer_than(10, townhall):
+                        actions.append(overlord.move(
+                            self.state.mineral_field.further_than(40, self.enemy_start_locations[0]).random))
+            if iteration % 50 == 0:
+                for overlord in self.units(unit_id).filter(lambda u: self.units(unit_id).closer_than(10, u).exists).ready:
                     actions.append(overlord.move(
                         self.state.mineral_field.further_than(40, self.enemy_start_locations[0]).random))
+        if be_cowardly:
+            for overlord in overlords:
+                enemy_threats = get_enemies_near_position(
+                    self, overlord, 10, unit_filter=lambda u: u.can_attack_air)
+                if enemy_threats.exists:
+                    closest_threat = enemy_threats.closest_to(overlord)
+                    away_from_threat = closest_threat.position.towards(
+                        self.start_location, distance=closest_threat.sight_range)
+                    actions.append(overlord.move(away_from_threat))
         return actions
 
     async def first_iteration(self):
@@ -376,7 +425,7 @@ class ZerglingMutaBot(ZergBotBase):
         start_location = random.choice(self.enemy_start_locations)
         for _ in range(100):
             position = start_location.towards_with_random_angle(
-                self.game_info.map_center, random.randrange(1, 5))
+                self.game_info.map_center, random.randrange(1, 20))
             action_list.append(scout.move(position, queue=True))
         await self.do_actions(action_list)
 
@@ -421,10 +470,26 @@ class ZerglingMutaBot(ZergBotBase):
                     await self.do(spire(upgrade))
                     return
 
+    async def handle_ultralisk_cavern_upgrades(self):
+        for ultralisk_cavern in self.units(UnitTypeId.ULTRALISKCAVERN).ready.noqueue:
+            for upgrade in self.ultralisk_cavern_upgrades:
+                bot_logger.log_action(
+                    self, 'buying upgrade {}'.format(upgrade))
+                try:
+                    await self.do(ultralisk_cavern(upgrade))
+                except Exception as e:
+                    print(e)
+            # TODO figure out why this errors
+            # available_abilities = await self.get_available_abilities(ultralisk_cavern)
+            # print(available_abilities)
+                # if upgrade in available_abilities:
+
     async def upgrade_military(self):
         await self.handle_evo_chamber_upgrades()
         if self.use_mutalisk_strategy:
             await self.handle_spire_upgrades()
+        if self.use_ultralisk_strategy:
+            await self.handle_ultralisk_cavern_upgrades()
 
     def should_build_infestation_pit(self) -> bool:
         return self.supply_used > 100 and not self.units(UnitTypeId.INFESTATIONPIT).ready.exists and self.can_afford(UnitTypeId.INFESTATIONPIT) and not self.already_pending(UnitTypeId.INFESTATIONPIT) and self.units(UnitTypeId.SPIRE).ready.exists

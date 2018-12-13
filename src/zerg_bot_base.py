@@ -24,6 +24,18 @@ class ZergBotBase(ABC, BotAI):
 
     @property
     @abstractmethod
+    def is_mutalisk_time(self) -> bool:
+        """override to allow the bot to determine if it should build / tech mutalisks"""
+        pass
+
+    @property
+    @abstractmethod
+    def is_ultralisk_time(self) -> bool:
+        """override to allow the bot to determine if it should build / tech ultralisks"""
+        pass
+
+    @property
+    @abstractmethod
     def is_rushing(self) -> bool:
         """override to allow the bot to determine if it is currently rushing"""
         pass
@@ -63,11 +75,21 @@ class ZergBotBase(ABC, BotAI):
         pass
 
     @abstractmethod
-    async def micro_army(self, iteration=None, is_under_attack=False, townhalls_under_attack=[]):
-        """override to allow the bot to control it's army"""
-        pass
-
-    @abstractmethod
     def get_townhalls_under_attack(self) -> Units:
         """override to allow the bot to determine which townhalls are under attack currently"""
         pass
+
+    @abstractmethod
+    async def on_game_step(self, iteration):
+        """override to allow the bot to perform actions every game step"""
+        pass
+
+    async def first_iteration(self):
+        """override to allow the bot to perform actions at the beginning of the game"""
+        pass
+
+    async def on_step(self, iteration):
+        if iteration == 0:
+            await self.first_iteration()
+
+        await self.on_game_step(iteration)

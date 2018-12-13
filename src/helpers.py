@@ -1,5 +1,5 @@
 import itertools
-from typing import Callable, Union, List
+from typing import Callable, Union, List, Tuple
 
 
 def longest_list_index(target_list: List) -> int:
@@ -46,7 +46,7 @@ def roundrobin(*lists):
     return result
 
 
-def between(value, minimum, maximum):
+def between(value: Union[int, float], minimum: Union[int, float], maximum: Union[int, float]) -> bool:
     """
     >>> between(50, 30, 60)
     True
@@ -56,6 +56,10 @@ def between(value, minimum, maximum):
     False
     """
     return minimum < value < maximum
+
+
+def value_between_any(value: Union[int, float], items: List[Tuple[Union[int, float], Union[int, float]]]) -> bool:
+    return any(between(value, minimum, maximum) for minimum, maximum in items)
 
 
 if __name__ == '__main__':
