@@ -11,19 +11,24 @@ from typing import List, Callable
 import src.bot_logger as bot_logger
 from src.helpers import roundrobin, between, value_between_any, property_cache_forever
 from src.bot_actions import build_building_once, get_workers_per_townhall, get_enemies_near_position, find_potential_enemy_expansions, get_is_targettable_callable, get_is_threat_callable
-from src.zerg_actions import get_random_larva, build_drone, build_zergling, build_overlord, upgrade_zergling_speed, get_forces, geyser_has_extractor, already_researching_lair, already_researching_hive, ZERG_MELEE_WEAPON_UPGRADES, ZERG_RANGED_WEAPON_UPGRADES, ZERG_GROUND_ARMOR_UPGRADES, ZERG_FLYING_WEAPON_UPGRADES, ZERG_FLYING_ARMOR_UPGRADES, ULTRALISK_DEN_ABILITIES
+from src.zerg_actions import get_random_larva, build_drone, build_zergling, build_overlord, \
+    upgrade_zergling_speed, get_forces, geyser_has_extractor, already_researching_lair, \
+    already_researching_hive, ZERG_MELEE_WEAPON_UPGRADES, ZERG_RANGED_WEAPON_UPGRADES, \
+    ZERG_GROUND_ARMOR_UPGRADES, ZERG_FLYING_WEAPON_UPGRADES, ZERG_FLYING_ARMOR_UPGRADES, \
+    ULTRALISK_DEN_ABILITIES, ROACHWARREN_ABILITIES
 from src.zerg_bot_base import ZergBotBase
 
 
 class BalancedZergBot(ZergBotBase):
     def __init__(self,
-                 boom_timings=[
+        # TODO make class wrapper for timings
+        boom_timings=[
             (-1, 420),
             (475, 775),
             (800, 1000),
             (1500, 1900),
             (2000, math.inf)
-                     ],
+        ],
         rush_timings=[
             (430, 475),
             (800, 850),
@@ -35,18 +40,21 @@ class BalancedZergBot(ZergBotBase):
             (2050, 2100),
             (2250, 2300),
             (2600, math.inf)
-                 ],
+        ],
         mutalisk_timings=[
             (-1, 700),
             (900, math.inf)
-                 ],
+        ],
         ultralisk_timings=[
             (400, math.inf)
-                 ],
+        ],
         roach_timings=[
             (400, 600),
             (1000, math.inf)
-                 ]
+        ],
+        hydralisk_timings=[
+            (450, math.inf)
+        ]
     ):
         super().__init__()
         self.boom_timings = boom_timings
@@ -54,6 +62,7 @@ class BalancedZergBot(ZergBotBase):
         self.mutalisk_timings = mutalisk_timings
         self.ultralisk_timings = ultralisk_timings
         self.roach_timings = roach_timings
+        self.hydralisk_timings = hydralisk_timings
 
     @property
     def _is_booming_time(self):
@@ -85,6 +94,11 @@ class BalancedZergBot(ZergBotBase):
         return value_between_any(now, self.roach_timings)
 
     @property
+    def _is_hydralisk_time(self):
+        now = self.time
+        return value_between_any(now, self.hydralisk_timings)
+
+    @property
     def _is_rushing(self):
         # TODO add conditions
         return self._is_rushing_time
@@ -113,56 +127,62 @@ class BalancedZergBot(ZergBotBase):
     def manage_booming(self):
         if self._is_booming:
             if not self.booming:
-                bot_logger.log_action(
-                    self, '-- starting boom period {} --'.format(self.time))
+                bot_logger.log_strategy_start(self, 'booming')
                 self.booming = True
         else:
             if self.booming:
-                bot_logger.log_action(
-                    self, '-- ending boom period {} --'.format(self.time))
+                bot_logger.log_strategy_end(self, 'booming')
                 self.booming = False
 
     def manage_rushing(self):
         if self._is_rushing:
             if not self.rushing:
-                bot_logger.log_action(
-                    self, '** starting rush period {} **'.format(self.time))
+                bot_logger.log_strategy_start(self, 'rushing')
                 self.rushing = True
         else:
             if self.rushing:
-                bot_logger.log_action(
-                    self, '** ending rush period {} **'.format(self.time))
+                bot_logger.log_strategy_end(self, 'rushing')
                 self.rushing = False
 
     def manage_mutalisk_strategy(self):
         if self._is_mutalisk_time:
             if not self.use_mutalisk_strategy:
-                bot_logger.log_action(self, 'enabling mutalisk strategy')
+                bot_logger.log_strategy_start(self, 'mutalisk')
                 self.use_mutalisk_strategy = True
         else:
             if self.use_mutalisk_strategy:
-                bot_logger.log_action(self, 'disabling mutalisk strategy')
+                bot_logger.log_strategy_end(self, 'mutalisk')
                 self.use_mutalisk_strategy = False
 
     def manage_ultralisk_strategy(self):
         if self._is_ultralisk_time:
             if not self.use_ultralisk_strategy:
-                bot_logger.log_action(self, 'enabling ultralisk strategy')
+                bot_logger.log_strategy_start(self, 'ultralisk')
                 self.use_ultralisk_strategy = True
         else:
             if self.use_ultralisk_strategy:
-                bot_logger.log_action(self, 'disabling ultralisk strategy')
+                bot_logger.log_strategy_end(self, 'ultralisk')
                 self.use_ultralisk_strategy = False
 
     def manage_roach_strategy(self):
         if self._is_roach_time:
             if not self.use_roach_strategy:
-                bot_logger.log_action(self, 'enabling roach strategy')
+                bot_logger.log_strategy_start(self, 'roach')
                 self.use_roach_strategy = True
         else:
             if self.use_roach_strategy:
-                bot_logger.log_action(self, 'disabling roach strategy')
+                bot_logger.log_strategy_end(self, 'roach')
                 self.use_roach_strategy = False
+
+    def manage_hydralisk_strategy(self):
+        if self._is_hydralisk_time:
+            if not self.use_hydralisk_strategy:
+                bot_logger.log_strategy_start(self, 'hydralisk')
+                self.use_hydralisk_strategy = True
+        else:
+            if self.use_hydralisk_strategy:
+                bot_logger.log_strategy_end(self, 'hydralisk')
+                self.use_hydralisk_strategy = False
 
     def manage_strategies(self):
         self.manage_booming()
@@ -191,6 +211,7 @@ class BalancedZergBot(ZergBotBase):
         self.use_mutalisk_strategy = False
         self.use_ultralisk_strategy = False
         self.use_roach_strategy = False
+        self.use_hydralisk_strategy = False
         self.booming = True
         self.rushing = False
 
@@ -319,6 +340,7 @@ class BalancedZergBot(ZergBotBase):
                                   townhalls_under_attack=townhalls_under_attack),
             *self.micro_roaches(is_under_attack=is_under_attack,
                                 townhalls_under_attack=townhalls_under_attack),
+            *self.micro_hydralisks(is_under_attack=is_under_attack, townhalls_under_attack=townhalls_under_attack),
             *self.micro_mutalisks(is_under_attack=is_under_attack,
                                   townhalls_under_attack=townhalls_under_attack),
             *self.micro_ultralisks(is_under_attack=is_under_attack,
@@ -404,6 +426,16 @@ class BalancedZergBot(ZergBotBase):
         for roach in roaches:
             action = self.micro_military_unit(
                 roach, is_under_attack=is_under_attack, townhalls_under_attack=townhalls_under_attack)
+            if action:
+                actions.append(action)
+        return actions
+
+    def micro_hydralisks(self, is_under_attack: bool=False, townhalls_under_attack=[]) -> List[UnitCommand]:
+        unit_id = UnitTypeId.HYDRALISK
+        hydralisks = self.units(unit_id).ready
+        actions = []
+        for hydralisk in hydralisks:
+            action = self.micro_military_unit(hydralisk, is_under_attack=is_under_attack, townhalls_under_attack=townhalls_under_attack)
             if action:
                 actions.append(action)
         return actions
@@ -575,6 +607,9 @@ class BalancedZergBot(ZergBotBase):
     def should_build_roach_warren(self) -> bool:
         return self.use_roach_strategy and not self.units(UnitTypeId.ROACHWARREN).ready.exists and self.can_afford(UnitTypeId.ROACHWARREN) and not self.already_pending(UnitTypeId.ROACHWARREN)
 
+    def should_build_hydralisk_den(self) -> bool:
+        return self.use_hydralisk_strategy and not self.units(UnitTypeId.HYDRALISKDEN).ready.exists and self.can_afford(UnitTypeId.HYDRALISKDEN) and not self.already_pending(UnitTypeId.HYDRALISKDEN)
+
     async def build_once_in_base(self, building: UnitTypeId, min_distance=7, max_distance=15):
         if not self.townhalls.exists:
             return
@@ -589,6 +624,8 @@ class BalancedZergBot(ZergBotBase):
             await self.build_once_in_base(UnitTypeId.SPAWNINGPOOL)
         if self.should_build_roach_warren():
             await self.build_once_in_base(UnitTypeId.ROACHWARREN)
+        if self.should_build_hydralisk_den():
+            await self.build_once_in_base(UnitTypeId.HYDRALISKDEN)
         if self.should_build_infestation_pit():
             await self.build_once_in_base(UnitTypeId.INFESTATIONPIT)
         if self.units(UnitTypeId.HIVE).ready.exists:
@@ -610,6 +647,26 @@ class BalancedZergBot(ZergBotBase):
             await self.build(UnitTypeId.EVOLUTIONCHAMBER, near=self.townhalls.closest_to(self.start_location))
         await self.upgrade_military()
 
+    def should_build_overlord(self) -> bool:
+        return (self.supply_left < 4 or self.minerals > 1500) and not self.already_pending(
+            UnitTypeId.OVERLORD) and not self.supply_cap == 200
+
+    def should_build_ultralisk(self) -> bool:
+        return self.use_ultralisk_strategy and self.can_afford(UnitTypeId.ULTRALISK) and self.units(UnitTypeId.ULTRALISKCAVERN).ready.exists
+
+    def should_build_mutalisk(self) -> bool:
+        return self.use_mutalisk_strategy and self.can_afford(UnitTypeId.MUTALISK) and self.units(UnitTypeId.SPIRE).ready.exists
+
+    def should_build_hydralisk(self) -> bool:
+        return self.use_hydralisk_strategy and self.can_afford(
+            UnitTypeId.HYDRALISK) and self.units(UnitTypeId.HYDRALISKDEN).ready.exists
+    
+    def should_build_roach(self) -> bool:
+        return self.use_roach_strategy and self.can_afford(UnitTypeId.ROACH) and self.units(UnitTypeId.ROACHWARREN).ready.exists
+
+    def should_build_zergling(self) -> bool:
+        return self.vespene < 100 or self.minerals / self.vespene > .3
+
     async def build_units(self, iteration, is_under_attack=False):
         if iteration % 50:
             # build queens
@@ -621,7 +678,7 @@ class BalancedZergBot(ZergBotBase):
         if self.units(UnitTypeId.LARVA).amount <= 0:
             return
 
-        if (self.supply_left < 4 or self.minerals > 1500) and not self.already_pending(UnitTypeId.OVERLORD) and not self.supply_cap == 200:
+        if self.should_build_overlord():
             overlords_to_build = 1
             if self.time > 200:
                 overlords_to_build += 1
@@ -633,19 +690,28 @@ class BalancedZergBot(ZergBotBase):
         for larva in self.units(UnitTypeId.LARVA).ready:
             if self.supply_left < 0:
                 return
-            if self.use_ultralisk_strategy and self.can_afford(UnitTypeId.ULTRALISK) and self.units(UnitTypeId.ULTRALISKCAVERN).ready.exists:
+            # TODO generate these weights more dynamically
+            ultralisk_weight = .8
+            mutalisk_weight = .8
+            hydralisk_weight = .8
+            roach_weight = .4
+            zergling_weight = .7
+            if self.should_build_ultralisk() and random.random() > ultralisk_weight:
                 bot_logger.log_action(self, "building ultralisk")
                 await self.do(larva.train(
                     UnitTypeId.ULTRALISK
                 ))
-            elif self.use_mutalisk_strategy and self.can_afford(UnitTypeId.MUTALISK) and self.units(UnitTypeId.SPIRE).ready.exists:
+            elif self.should_build_mutalisk() and random.random() > mutalisk_weight:
                 bot_logger.log_action(self, "building mutalisk")
                 await self.do(larva.train(
                     UnitTypeId.MUTALISK))
-            elif self.use_roach_strategy and self.can_afford(UnitTypeId.ROACH) and self.units(UnitTypeId.ROACHWARREN).ready.exists:
+            elif self.should_build_hydralisk() and random.random() > hydralisk_weight:
+                bot_logger.log_action(self, "building hydralisk")
+                await self.do(larva.train(UnitTypeId.HYDRALISK))
+            elif self.should_build_roach() and random.random() > roach_weight:
                 bot_logger.log_action(self, "building roach")
                 await self.do(larva.train(UnitTypeId.ROACH))
-            elif self.vespene < 100 or self.minerals / self.vespene > .3:
+            elif self.should_build_zergling() and random.random() > zergling_weight:
                 await build_zergling(self, larva)
 
     def should_build_gas(self) -> bool:
