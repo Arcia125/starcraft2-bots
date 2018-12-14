@@ -188,6 +188,7 @@ class BalancedZergBot(ZergBotBase):
         self.manage_booming()
         self.manage_rushing()
         self.manage_roach_strategy()
+        self.manage_hydralisk_strategy()
         self.manage_mutalisk_strategy()
         self.manage_ultralisk_strategy()
 
