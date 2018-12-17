@@ -1,6 +1,10 @@
+import os
 import itertools
+import datetime
 from functools import wraps
 from typing import Callable, Union, List, Tuple
+
+from sc2 import Result
 
 
 def longest_list_index(target_list: List) -> int:
@@ -72,6 +76,7 @@ def value_between_any(value: Union[int, float], items: List[Tuple[Union[int, flo
 
 
 def property_cache_forever(f):
+    """Decorator that caches class properties"""
     f.cached = None
 
     @wraps(f)
@@ -80,6 +85,44 @@ def property_cache_forever(f):
             f.cached = f(self)
         return f.cached
     return property(inner)
+
+
+def get_timestamp():
+    return datetime.datetime.now().isoformat()
+
+
+def sanitize_for_file(s):
+    return str(s).replace(':', '-').replace('.', '_')
+
+
+def get_filesafe_timestamp():
+    return sanitize_for_file(get_timestamp())
+
+
+def get_replay_name(players, game_map) -> str:
+    replay_part = '{}-{}-{}-vs-{}'.format(
+        game_map.name, players[0].__class__.__name__, players[1].race, players[1].difficulty)
+    replay_name = os.path.join(
+        os.getcwd(), 'replays', '{}_{}'.format(get_filesafe_timestamp(), replay_part))
+    sanitized_replay_name = replay_name.replace('.', '_')
+    return '{}.SC2Replay'.format(sanitized_replay_name)
+
+
+def get_plot_directory() -> str:
+    return os.path.join(os.getcwd(), 'plots')
+
+
+def get_figure_name(game_result: Result) -> str:
+    """Gets a unique name for a figure."""
+    file_name = '{}_{}'.format(game_result.name, get_filesafe_timestamp())
+    path_name = get_plot_directory()
+    figure_name = os.path.join(path_name, file_name)
+    return figure_name
+
+
+def make_dir_if_not_exists(dir_name):
+    if not os.path.exists(dir_name):
+        os.makedirs(dir_name)
 
 
 if __name__ == '__main__':

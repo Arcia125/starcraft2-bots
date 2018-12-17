@@ -6,6 +6,7 @@ from sc2.units import Units
 from typing import Union, Optional, List, Callable
 
 import src.bot_logger as bot_logger
+from src.types import Location, UnitPredicate
 
 
 async def build_building_once(bot: BotAI, building: UnitTypeId, location: Union[Point2, Point3, Unit], max_distance: int=20, unit: Optional[Unit]=None, random_alternative: bool=True, placement_step: int=2):
@@ -21,7 +22,7 @@ def get_workers_per_townhall(bot: BotAI) -> int:
         bot.townhalls.amount if bot.townhalls.ready.exists else bot.workers.ready.amount
 
 
-def get_enemies_near_position(bot: BotAI, position: Union[Unit, Point2, Point3], distance: Union[int, float]=20, unit_filter: Callable[[Unit], bool]=lambda u: u.can_attack_ground) -> Units:
+def get_enemies_near_position(bot: BotAI, position: Location, distance: Union[int, float]=20, unit_filter: UnitPredicate=lambda u: u.can_attack_ground) -> Units:
     """Returns units closer than the distance from the given position."""
     enemies_close_by = bot.known_enemy_units.closer_than(distance, position)
     return enemies_close_by.filter(unit_filter)
@@ -43,7 +44,7 @@ def targettable_by_none(unit: Unit) -> bool:
     return False
 
 
-def get_is_targettable_callable(unit: Unit) -> Callable[[Unit], bool]:
+def get_is_targettable_callable(unit: Unit) -> UnitPredicate:
     can_attack_air = unit.can_attack_air
     can_attack_ground = unit.can_attack_ground
 
@@ -65,7 +66,7 @@ def is_threat_to_ground(unit: Unit) -> bool:
     return unit.can_attack_ground
 
 
-def get_is_threat_callable(unit: Unit) -> Callable[[Unit], bool]:
+def get_is_threat_callable(unit: Unit) -> UnitPredicate:
     is_air_unit = unit.is_flying
     if is_air_unit:
         return is_threat_to_air
@@ -88,3 +89,15 @@ def find_potential_enemy_expansions(bot: BotAI) -> List[Point2]:
         if distance_to_enemy_start < distance_to_own_start:
             expansion_locations.append(point)
     return expansion_locations
+
+
+def get_closest_to(locations: List[Location], Location) -> Location:
+    closest_location = None
+    closest_distance = math.inf
+    for location in locations:
+        distance_to_start = location.distance_to(
+            location)
+        if distance_to_start < closest_distance:
+            closest_distance = distance_to_start
+            closest_location = location
+    return closest_location

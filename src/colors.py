@@ -38,15 +38,6 @@ _COLORS = {
     }
 }
 
-# _GENERAL_NAMES = [color for color in _COLORS if not color in ['FG', 'BG']]
-# _FG_NAMES = [color for color in _COLORS.get('FG')]
-# _BG_NAMES = [color for color in _COLORS.get('BG')]
-
-# print(_GENERAL_NAMES)
-# print(_FG_NAMES)
-# print(_BG_NAMES)
-
-
 class Colorizer(object):
     color_names = []
 
@@ -170,3 +161,11 @@ for color_name, terminal_code in _COLORS.get('BG').items():
     Colorizer._register_color_adder('bg_{}'.format(color_name), terminal_code)
 
 # print(dir(Colorizer))
+
+# _GENERAL_NAMES = [color for color in _COLORS if not color in ['FG', 'BG']]
+# _FG_NAMES = [color for color in _COLORS.get('FG')]
+# _BG_NAMES = [color for color in _COLORS.get('BG')]
+
+# print(_GENERAL_NAMES)
+# print(_FG_NAMES)
+# print(_BG_NAMES)

@@ -13,10 +13,10 @@ def _get_message_prefix(bot: BotAI) -> str:
     time = Colorizer.yellow(_format_time(bot.time))
     supply_used = Colorizer.yellow(bot.supply_used)
     supply_cap = Colorizer.yellow(bot.supply_cap)
-    minerals_per_second = Colorizer.light_cyan(
+    minerals_per_minute = Colorizer.light_cyan(
         bot.state.score.collection_rate_minerals)
-    gas_per_second = Colorizer.green(bot.state.score.collection_rate_vespene)
-    return 'TIME: {} SUPPLY: {} / {} MPS: {} GPS: {}'.format(time, supply_used, supply_cap, minerals_per_second, gas_per_second)
+    gas_per_minute = Colorizer.green(bot.state.score.collection_rate_vespene)
+    return 'TIME: {} SUPPLY: {} / {} MPM: {} GPM: {}'.format(time, supply_used, supply_cap, minerals_per_minute, gas_per_minute)
 
 
 def _log(bot: BotAI, message: str, get_message_prefix: Callable[[BotAI], str]=_get_message_prefix):

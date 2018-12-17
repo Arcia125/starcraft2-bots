@@ -16,7 +16,8 @@ COMBAT_UNIT_TYPES = [
     UnitTypeId.HYDRALISK,
     UnitTypeId.BROODLORD,
     UnitTypeId.CORRUPTOR,
-    UnitTypeId.LURKER
+    UnitTypeId.LURKER,
+    UnitTypeId.ULTRALISK
 ]
 
 ZERG_MELEE_WEAPON_UPGRADES = [
@@ -55,8 +56,15 @@ ROACHWARREN_ABILITIES = [
     AbilityId.RESEARCH_TUNNELINGCLAWS
 ]
 
-ULTRALISK_DEN_ABILITIES = [
-    AbilityId.RESEARCH_CHITINOUSPLATING
+# TODO verify
+HYDRALISK_DEN_ABILITIES = [
+    AbilityId.RESEARCH_GROOVEDSPINES,
+    AbilityId.RESEARCH_MUSCULARAUGMENTS
+]
+
+ULTRALISK_CAVERN_ABILITIES = [
+    AbilityId.RESEARCH_CHITINOUSPLATING,
+    AbilityId.RESEARCH_ANABOLIC_SYNTHESIS
 ]
 
 
@@ -74,7 +82,7 @@ async def build_drone(bot: BotAI, larva=None):
 
 async def build_zergling(bot: BotAI, larva):
     unit = larva if larva else get_random_larva(bot)
-    if unit and bot.can_afford(UnitTypeId.ZERGLING) and bot.units(UnitTypeId.SPAWNINGPOOL).ready.exists and bot.supply_left > 2:
+    if unit and bot.can_afford(UnitTypeId.ZERGLING) and bot.units(UnitTypeId.SPAWNINGPOOL).ready.exists:
         bot_logger.log_action(bot, "building zergling")
         return await bot.do(unit.train(UnitTypeId.ZERGLING))
 
