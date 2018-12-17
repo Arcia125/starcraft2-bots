@@ -8,11 +8,12 @@ from sc2.position import Point2, Point3
 from sc2.constants import AbilityId, BuffId, UnitTypeId, UpgradeId
 from sc2.unit_command import UnitCommand
 from typing import List, Callable, Optional, Dict, Union
-import matplotlib.pyplot as plt
 
 import src.bot_logger as bot_logger
-from src.helpers import roundrobin, between, value_between_any, property_cache_forever, get_figure_name, get_plot_directory, make_dir_if_not_exists
-from src.bot_actions import build_building_once, get_workers_per_townhall, get_enemies_near_position, find_potential_enemy_expansions, get_is_targettable_callable, get_is_threat_callable, get_closest_to
+from src.helpers import roundrobin, between, value_between_any, property_cache_forever, \
+get_figure_name, get_plot_directory, make_dir_if_not_exists
+from src.bot_actions import build_building_once, get_workers_per_townhall, get_enemies_near_position, \
+find_potential_enemy_expansions, get_is_targettable_callable, get_is_threat_callable, get_closest_to
 from src.zerg_actions import get_random_larva, build_drone, build_zergling, build_overlord, \
     upgrade_zergling_speed, get_forces, geyser_has_extractor, already_researching_lair, \
     already_researching_hive, ZERG_MELEE_WEAPON_UPGRADES, ZERG_RANGED_WEAPON_UPGRADES, \
