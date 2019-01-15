@@ -55,7 +55,8 @@ def main():
     players = []
     for _ in range(50):
         players = [
-            BalancedZergBot(auto_camera=True, should_show_plot=False),
+            Bot(Race.Zerg, BalancedZergBot(
+                auto_camera=True, should_show_plot=True)),
             Computer(Race.Random, Difficulty.Hard)
         ]
 
