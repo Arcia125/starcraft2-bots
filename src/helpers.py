@@ -3,7 +3,6 @@ import itertools
 import datetime
 from functools import wraps
 from typing import Callable, Union, List, Tuple
-
 from sc2 import Result
 
 
@@ -63,18 +62,6 @@ def between(value: Union[int, float], minimum: Union[int, float], maximum: Union
     return minimum < value < maximum
 
 
-def value_between_any(value: Union[int, float], items: List[Tuple[Union[int, float], Union[int, float]]]) -> bool:
-    """Returns whether the given value falls between any of the ranges in the given list.
-    >>> value_between_any(5, [(1, 6)])
-    True
-    >>> value_between_any(10, [(1, 6), (6, 12)])
-    True
-    >>> value_between_any(100, [(1, 6), (6, 12)])
-    False
-    """
-    return any(between(value, minimum, maximum) for minimum, maximum in items)
-
-
 def property_cache_forever(f):
     """Decorator that caches class properties"""
     f.cached = None
@@ -92,6 +79,10 @@ def get_timestamp():
 
 
 def sanitize_for_file(s):
+    """
+    >>> sanitize_for_file('58:20.10')
+    '58-20_10'
+    """
     return str(s).replace(':', '-').replace('.', '_')
 
 
@@ -100,8 +91,13 @@ def get_filesafe_timestamp():
 
 
 def get_replay_name(players, game_map) -> str:
-    replay_part = '{}-{}-{}-vs-{}'.format(
-        game_map.name, players[0].__class__.__name__, players[1].race, players[1].difficulty)
+    replay_part = None
+    if hasattr(players[1], 'difficulty'):
+        replay_part = '{}-{}-vs-{}-{}'.format(
+            game_map.name, players[0].__class__.__name__, players[1].race, players[1].difficulty)
+    else:
+        replay_part = '{}-{}-vs-{}'.format(
+            game_map.name, players[0].__class__.__name__, players[1].race)
     replay_name = os.path.join(
         os.getcwd(), 'replays', '{}_{}'.format(get_filesafe_timestamp(), replay_part))
     sanitized_replay_name = replay_name.replace('.', '_')

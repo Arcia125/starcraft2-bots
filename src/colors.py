@@ -38,6 +38,7 @@ _COLORS = {
     }
 }
 
+
 class Colorizer(object):
     color_names = []
 
@@ -159,6 +160,40 @@ for color_name, terminal_code in _COLORS.get('FG').items():
 
 for color_name, terminal_code in _COLORS.get('BG').items():
     Colorizer._register_color_adder('bg_{}'.format(color_name), terminal_code)
+
+
+class DebugColors(type):
+    @property
+    def red(cls):
+        return cls(g=0, b=0)
+
+    @property
+    def blue(cls):
+        return cls(r=0, g=0)
+
+    @property
+    def green(cls):
+        return cls(r=0, b=0)
+
+    @property
+    def magenta(cls):
+        return cls(g=0)
+
+    @property
+    def yellow(cls):
+        return cls(b=0)
+
+    @property
+    def teal(cls):
+        return cls(r=0)
+
+
+class DebugColor(object, metaclass=DebugColors):
+    def __init__(self, r=255, g=255, b=255):
+        self.r = r
+        self.g = g
+        self.b = b
+
 
 # print(dir(Colorizer))
 

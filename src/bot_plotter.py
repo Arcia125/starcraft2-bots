@@ -25,7 +25,7 @@ class BotPlotter(object):
 
     def show(self):
         plt.draw()
-        plt.pause(0.0001)
+        plt.pause(0.0000001)
 
     def save(self, filename):
         self.figure.savefig(filename)

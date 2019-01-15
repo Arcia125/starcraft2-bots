@@ -4,13 +4,15 @@ import math
 from sc2 import Result
 from sc2.unit import Unit
 from sc2.units import Units
-from sc2.position import Point2, Point3
+from sc2.position import Point2, Point3, Pointlike
 from sc2.constants import AbilityId, BuffId, UnitTypeId, UpgradeId
 from sc2.unit_command import UnitCommand
+from sc2.data import race_worker
 from typing import List, Callable, Optional, Dict, Union
+from functools import reduce
 
 import src.bot_logger as bot_logger
-from src.helpers import roundrobin, between, value_between_any, property_cache_forever, \
+from src.helpers import roundrobin, between, property_cache_forever, \
 get_figure_name, get_plot_directory, make_dir_if_not_exists
 from src.bot_actions import build_building_once, get_workers_per_townhall, get_enemies_near_position, \
 find_potential_enemy_expansions, get_is_targettable_callable, get_is_threat_callable, get_closest_to
@@ -24,54 +26,61 @@ from src.location_picker import LocationPicker
 from src.location_checker import LocationChecker
 from src.bot_plotter import BotPlotter
 from src.types import Location
+from src.colors import DebugColor
+from src.bot_debugger import BotDebugger
+from src.timing_manager import TimingManager, Timing
 
 
 class BalancedZergBot(ZergBotBase):
     def __init__(self,
         auto_camera=True,
         should_show_plot=True,
-        # TODO make class wrapper for timings
-        boom_timings=[
-            (-1, 500),
-            (550, 775),
-            (800, 1000),
-            (1500, 1900),
-            (2000, math.inf)
-        ],
-        rush_timings=[
-            (400, 850),
-            (950, 1000),
-            (1250, 1300),
-            (1450, 1500),
-            (1650, 1700),
-            (1850, 1900),
-            (2050, 2100),
-            (2250, 2300),
-            (2600, math.inf)
-        ],
-        mutalisk_timings=[
-            (300, 800),
-            (900, 1200)
-        ],
-        ultralisk_timings=[
-            (400, math.inf)
-        ],
-        roach_timings=[
-            (400, 700),
-            (1000, math.inf)
-        ],
-        hydralisk_timings=[
-            (600, math.inf)
-        ]
+        show_debug=True,
+        timings={
+            'boom': [
+                Timing(-1, 500),
+                Timing(550, 775),
+                Timing(800, 1000),
+                Timing(1500, 1900),
+                Timing(2000, math.inf)
+            ],
+            'rush': [
+                Timing(400, 850),
+                Timing(950, 1000),
+                Timing(1250, 1300),
+                Timing(1450, 1500),
+                Timing(1650, 1700),
+                Timing(1850, 1900),
+                Timing(2050, 2100),
+                Timing(2250, 2300),
+                Timing(2600, math.inf)
+            ],
+            'roach': [
+                Timing(400, 700),
+                Timing(1000, math.inf)
+            ],
+            'hydralisk': [
+                Timing(600, math.inf)
+            ],
+            'mutalisk': [
+                Timing(300, 800),
+                Timing(900, 1200)
+            ],
+            'ultralisk': [
+                Timing(400, math.inf)
+            ],
+            'broodlord': [
+                Timing(550, math.inf)
+            ]
+        }
     ):
         super().__init__()
         self.auto_camera = auto_camera
-        self.boom_timings = boom_timings
-        self.rush_timings = rush_timings
-        self.mutalisk_timings = mutalisk_timings
-        self.ultralisk_timings = ultralisk_timings
-        self.roach_timings = roach_timings
-        self.hydralisk_timings = hydralisk_timings
+        self.should_show_debug = show_debug
+        self.timings = timings
+        self.timing_manager = TimingManager(self.timings)
+        if self.should_show_debug:
+            self.debugger: BotDebugger = BotDebugger()
         self.should_show_plot = should_show_plot
         if self.should_show_plot:
             self.plotter = BotPlotter({
@@ -94,8 +103,7 @@ class BalancedZergBot(ZergBotBase):
 
     @property
     def _is_booming_time(self):
-        now = self.time
-        return value_between_any(now, self.boom_timings)
+        return self.timing_manager.is_timing('boom')
 
     @property
     def _is_booming(self):
@@ -103,28 +111,27 @@ class BalancedZergBot(ZergBotBase):
 
     @property
     def _is_rushing_time(self):
-        now = self.time
-        return value_between_any(now, self.rush_timings)
+        return self.timing_manager.is_timing('rush')
 
     @property
     def _is_mutalisk_time(self):
-        now = self.time
-        return value_between_any(now, self.mutalisk_timings)
+        return self.timing_manager.is_timing('mutalisk')
 
     @property
     def _is_ultralisk_time(self):
-        now = self.time
-        return value_between_any(now, self.ultralisk_timings)
+        return self.timing_manager.is_timing('ultraliks')
 
     @property
     def _is_roach_time(self):
-        now = self.time
-        return value_between_any(now, self.roach_timings)
+        return self.timing_manager.is_timing('roach')
 
     @property
     def _is_hydralisk_time(self):
-        now = self.time
-        return value_between_any(now, self.hydralisk_timings)
+        return self.timing_manager.is_timing('hydralisk')
+    
+    @property
+    def _is_broodlord_time(self):
+        return self.timing_manager.is_timing('broodlord')
 
     @property
     def _is_rushing(self):
@@ -141,6 +148,60 @@ class BalancedZergBot(ZergBotBase):
         recent_combat = self.time - \
             self.last_defensive_situation_time < 20 if self.last_defensive_situation_time else False
         return is_under_attack or recent_combat
+
+    def on_start(self):
+        # settings
+        self.max_worker_count = 85
+        self.ideal_workers_per_hatch = 24
+
+        # milestones
+        self.metabolic_boost_started = False
+        self.adrenal_glands_started = False
+        self.burrow_started = False
+
+        # event memories
+        self.expansion_count = 0
+        self.last_expansion_time = 0
+        self.last_defensive_situation_time = None
+        # add self.expansion_locations to this list
+        location_options: Dict[str, Point2] = {}
+        for i, location in enumerate(self.enemy_start_locations):
+            location_options[str(i)] = location
+        self.checked_enemy_start_locations = LocationPicker(
+            self, location_options=location_options, location_checker=lambda bot, location: bot.units.closer_than(20, location).amount > 10)
+        self.known_enemy_army_centers: List[Pointlike] = []
+        # TODO: pick a better start estimate or initialize as None
+        self.estimated_enemy_army_location: Point2 = self.game_info.map_center
+
+        # graphing
+        if self.should_show_plot:
+            self._time_history = []
+            self._minerals_per_minute_history = []
+            self._gas_per_minute_history = []
+            self._supply_used_history = []
+            self._workers_history = []
+            self._forces_history = []
+            self._army_value_lost_history = []
+            self._army_killed_value_history = []
+
+        # strategy toggles (these are all managed, see the __init__ method for timings,
+        # and the manage_strategies method for the heuristics that enable / disable these properties)
+        self.use_mutalisk_strategy = False
+        self.use_ultralisk_strategy = False
+        self.use_roach_strategy = False
+        self.use_hydralisk_strategy = False
+        self.use_broodlord_strategy = False
+        self.booming = True
+        self.rushing = False
+
+        # upgrade lists used to perform upgrades in a particular order
+        self.evolution_chamber_upgrades = roundrobin(
+            ZERG_RANGED_WEAPON_UPGRADES, ZERG_GROUND_ARMOR_UPGRADES, ZERG_MELEE_WEAPON_UPGRADES)
+        self.spire_upgrades = roundrobin(
+            ZERG_FLYING_WEAPON_UPGRADES, ZERG_FLYING_ARMOR_UPGRADES)
+        self.hydralisk_den_upgrades = HYDRALISK_DEN_ABILITIES
+        self.roach_warren_upgrades = ROACHWARREN_ABILITIES
+        self.ultralisk_cavern_upgrades = ULTRALISK_CAVERN_ABILITIES
 
     async def on_unit_created(self, unit: Unit):
         """automatically called by base class"""
@@ -216,55 +277,25 @@ class BalancedZergBot(ZergBotBase):
                 bot_logger.log_strategy_end(self, 'hydralisk')
                 self.use_hydralisk_strategy = False
 
-    def on_start(self):
-        # settings
-        self.max_worker_count = 85
-        self.ideal_workers_per_hatch = 24
+    def manage_broodlord_strategy(self):
+        if self._is_broodlord_time:
+            if not self.use_broodlord_strategy:
+                bot_logger.log_strategy_start(self, 'broodlord')
+                self.use_broodlord_strategy = True
+        else:
+            if self.use_broodlord_strategy:
+                bot_logger.log_strategy_end(self, 'broodlord')
+                self.use_broodlord_strategy = False
 
-        # milestones
-        self.metabolic_boost_started = False
-        self.adrenal_glands_started = False
-        self.burrow_started = False
+    def manage_strategies(self):
+        self.manage_booming()
+        self.manage_rushing()
+        self.manage_roach_strategy()
+        self.manage_hydralisk_strategy()
+        self.manage_mutalisk_strategy()
+        self.manage_ultralisk_strategy()
+        self.manage_broodlord_strategy()
 
-        # event memories
-        self.expansion_count = 0
-        self.last_expansion_time = 0
-        self.last_defensive_situation_time = None
-        # add self.expansion_locations to this list
-        location_options = {}
-        for i, location in enumerate(self.enemy_start_locations):
-            location_options[str(i)] = location
-        self.checked_enemy_start_locations = LocationPicker(self, location_options=location_options, location_checker=lambda bot, location: bot.units.closer_than(20, location).amount > 10)
-
-        # graphing
-        if self.should_show_plot:
-            self._time_history = []
-            self._minerals_per_minute_history = []
-            self._gas_per_minute_history = []
-            self._supply_used_history = []
-            self._workers_history = []
-            self._forces_history = []
-            self._army_value_lost_history = []
-            self._army_killed_value_history = []        
-
-        # strategy toggles (these are all managed, see the __init__ method for timings,
-        # and the manage_strategies method for the heuristics that enable / disable these properties)
-        self.use_mutalisk_strategy = False
-        self.use_ultralisk_strategy = False
-        self.use_roach_strategy = False
-        self.use_hydralisk_strategy = False
-        self.booming = True
-        self.rushing = False
-
-        # upgrade lists used to perform upgrades in a particular order
-        self.evolution_chamber_upgrades = roundrobin(
-            ZERG_RANGED_WEAPON_UPGRADES, ZERG_GROUND_ARMOR_UPGRADES, ZERG_MELEE_WEAPON_UPGRADES)
-        self.spire_upgrades = roundrobin(
-            ZERG_FLYING_WEAPON_UPGRADES, ZERG_FLYING_ARMOR_UPGRADES)
-        self.hydralisk_den_upgrades = HYDRALISK_DEN_ABILITIES
-        self.roach_warren_upgrades = ROACHWARREN_ABILITIES
-        self.ultralisk_cavern_upgrades = ULTRALISK_CAVERN_ABILITIES
-    
     async def can_build_lair(self):
         if not self.townhalls.noqueue.exists:
             return False
@@ -317,19 +348,56 @@ class BalancedZergBot(ZergBotBase):
                           self._army_killed_value_history, 'b-', label='Army value killed')
         self.plotter.show()
 
-    def manage_strategies(self):
-        self.manage_booming()
-        self.manage_rushing()
-        self.manage_roach_strategy()
-        self.manage_hydralisk_strategy()
-        self.manage_mutalisk_strategy()
-        self.manage_ultralisk_strategy()
-
-
+    async def show_debug(self, draw_own_unit_range=True, draw_own_unit_targets=True, draw_enemy_unit_range=True, draw_rally_point=True, draw_estimated_enemy_army_center=True):
+        for unit in self.units.not_structure.ready:
+            enemy_is_close_by = get_enemies_near_position(self, unit, distance=max(
+                unit.ground_range, unit.air_range) + unit.radius * 1.2).exists
+            is_attacking = unit.is_attacking
+            if draw_own_unit_range:
+                if not is_attacking and enemy_is_close_by:
+                    self.debugger.draw_unit_range(self._client, unit, color=DebugColor.green)
+            if draw_own_unit_targets:
+                if is_attacking:
+                    self.debugger.draw_unit_target(
+                        self._client, unit, self.known_enemy_units, color=DebugColor.red)
+        for enemy in self.known_enemy_units.not_structure.ready:
+            if draw_enemy_unit_range and not enemy.is_attacking:
+                self.debugger.draw_unit_range(self._client, enemy, color=DebugColor.red)
+        if draw_rally_point:
+            rally_point = self.get_rally_point()
+            self._client.debug_sphere_out(rally_point, 10, color=DebugColor.magenta)
+        if draw_estimated_enemy_army_center and self.estimated_enemy_army_location:
+            z_pos = (self.townhalls.closest_to(self.start_location) if self.townhalls.exists else self.units.first).position3d.z + 4
+            estimated_enemy_army_center_3d = Point3((*self.estimated_enemy_army_location, z_pos))
+            self._client.debug_sphere_out(estimated_enemy_army_center_3d, 10, color=DebugColor.yellow)
+            self._client.debug_text_3d('ESTIMATED ENEMY ARMY POSITION', estimated_enemy_army_center_3d, color=DebugColor.red, size=20)
+        await self._client.send_debug()
 
     async def on_game_step(self, iteration):
         # print('LOST ARMY: {} KILLED ARMY: {} MINERALS GAINED per minute: {}'.format(
         #     self.state.score.lost_minerals_army, self.state.score.killed_minerals_army, self.state.score.collection_rate_minerals))
+        self.timing_manager.manage_timings(self.time)
+        enemy_units = self.known_enemy_units.not_structure
+        if enemy_units.exists:
+            known_enemy_combat_units = enemy_units.exclude_type(race_worker.values())
+            if known_enemy_combat_units.exists:
+                history_item = known_enemy_combat_units.center.rounded
+                self.known_enemy_army_centers.append(history_item)
+                self.known_enemy_army_centers = self.known_enemy_army_centers[-20:]
+            else:
+                history_item = enemy_units.center.rounded
+                self.known_enemy_army_centers.append(history_item)
+                self.known_enemy_army_centers = self.known_enemy_army_centers[-20:]
+        elif iteration % 100 and self.known_enemy_units.exists:
+            history_item = self.known_enemy_units.center.rounded
+            self.known_enemy_army_centers.append(history_item)
+            self.known_enemy_army_centers = self.known_enemy_army_centers[-20:]
+        
+        estimated_enemy_army_location_total = reduce(
+            lambda location, location_sum: (location[0] + location_sum[0], location[1] + location_sum[1]), self.known_enemy_army_centers, (0, 0))
+        number_of_locations = len(self.known_enemy_army_centers)
+        if number_of_locations:
+            self.estimated_enemy_army_location = Point2((estimated_enemy_army_location_total[0] / number_of_locations, estimated_enemy_army_location_total[1] / number_of_locations))
         if self.already_pending(UnitTypeId.LAIR) or self.already_pending(UnitTypeId.HIVE):
             print('lair pending: {} hive pending: {}'.format(self.already_pending(
                 UnitTypeId.LAIR), self.already_pending(UnitTypeId.HIVE)))
@@ -341,6 +409,8 @@ class BalancedZergBot(ZergBotBase):
         # print(checked_start_locations)
         if is_under_attack:
             self.last_defensive_situation_time = self.time
+        if self.should_show_debug:
+            await self.show_debug()
         if iteration % 8 == 0:
             self.manage_strategies()
 
@@ -364,7 +434,6 @@ class BalancedZergBot(ZergBotBase):
                 self._army_killed_value_history = self._army_killed_value_history[-20:]
                 self.update_plot()
 
-        
         # if self.should_show_plot and iteration % 25 == 0:
 
         if self.auto_camera:
@@ -500,6 +569,7 @@ class BalancedZergBot(ZergBotBase):
                                   townhalls_under_attack=townhalls_under_attack),
             *self.micro_ultralisks(is_under_attack=is_under_attack,
                                    townhalls_under_attack=townhalls_under_attack),
+            *self.micro_broodlords(is_under_attack=is_under_attack, townhalls_under_attack=townhalls_under_attack),
             *self.micro_overlords(iteration)
         ]
         await self.do_actions(actions)
@@ -616,7 +686,20 @@ class BalancedZergBot(ZergBotBase):
         unit_id = UnitTypeId.ZERGLING
         zerglings = self.units(unit_id).ready
         actions = []
+        forces = get_forces(self)
         for zergling in zerglings:
+            is_zergling_threat = get_is_targettable_callable(zergling)
+            nearby_forces = forces.closer_than(30, zergling)
+            nearby_threats = get_enemies_near_position(self, zergling, 50, unit_filter=is_zergling_threat)
+            distance_to_estimated_enemy_army_location = zergling.distance_to(self.estimated_enemy_army_location)
+            is_way_outnumbered = nearby_threats.amount * 2 > nearby_forces.amount - 1
+            is_near_enemy_army_center = distance_to_estimated_enemy_army_location < 30
+            is_not_grouped_up_near_enemy_army = nearby_forces.amount < 3 and is_near_enemy_army_center
+            if (is_way_outnumbered or is_not_grouped_up_near_enemy_army):
+                closest_townhall = self.townhalls.closest_to(zergling)
+                if get_enemies_near_position(self, closest_townhall, 15, unit_filter=is_zergling_threat).amount > nearby_forces.amount:
+                    actions.append(zergling.move(closest_townhall))
+                    continue
             action = self.micro_military_unit(
                 zergling, is_under_attack=is_under_attack, townhalls_under_attack=townhalls_under_attack)
             if action:
@@ -657,7 +740,6 @@ class BalancedZergBot(ZergBotBase):
         actions = []
         forces = get_forces(self)
         for mutalisk in mutalisks:
-            
             # retreat if low health or outnumbered
             if mutalisk.health_percentage < .40:
                 nearby_forces = forces.closer_than(20, mutalisk)
@@ -699,6 +781,16 @@ class BalancedZergBot(ZergBotBase):
                 actions.append(action)
         return actions
 
+    def micro_broodlords(self, is_under_attack=False, townhalls_under_attack=[]) -> List[UnitCommand]:
+        unit_id = UnitTypeId.BROODLORD
+        broodlords = self.units(unit_id).ready
+        actions = []
+        for broodlord in broodlords:
+            action = self.micro_military_unit(broodlord, is_under_attack=is_under_attack, townhalls_under_attack=townhalls_under_attack)
+            if action:
+                actions.append(action)
+        return actions
+
     def micro_overlords(self, iteration, be_cowardly=True, spread_creep=True, spread_out=True) -> List[UnitCommand]:
         unit_id = UnitTypeId.OVERLORD
         overlords = self.units(unit_id).ready
@@ -706,13 +798,6 @@ class BalancedZergBot(ZergBotBase):
         if spread_creep and iteration % 50 == 0 and self.units(UnitTypeId.LAIR).ready.exists or self.units(UnitTypeId.HIVE).ready.exists:
             for overlord in overlords:
                 actions.append(overlord(AbilityId.BEHAVIOR_GENERATECREEPON))
-        if spread_out:
-            distance = 35
-            if iteration % 8 == 0 and self.time % 60 == 0:
-                for overlord in overlords.idle:
-                    location = self.start_location.towards_with_random_angle(self.enemy_start_locations[0], distance=distance)
-                    actions.append(overlord.move(location))
-                    distance += 15
         if be_cowardly:
             for overlord in overlords:
                 enemy_threats = get_enemies_near_position(
@@ -722,11 +807,24 @@ class BalancedZergBot(ZergBotBase):
                     away_from_threat = closest_threat.position.towards(
                         self.start_location, distance=closest_threat.sight_range + 10)
                     actions.append(overlord.move(away_from_threat))
+        # scout for enemy bases
+        if not self.known_enemy_structures.exists:
+            for overlord in overlords.idle:
+                actions.append(overlord.move(random.choice(self.enemy_start_locations)))
+            return actions
+        if spread_out:
+            distance = 35
+            if iteration % 8 == 0 and self.time % 60 == 0:
+                for overlord in overlords.idle:
+                    location = self.start_location.towards_with_random_angle(self.enemy_start_locations[0], distance=distance)
+                    actions.append(overlord.move(location))
+                    distance += 15
         return actions
 
     async def first_iteration(self):
         await self.distribute_workers()
         await self.scout_enemy()
+        # TODO move first overlord to watch enemy ramp
 
     def get_checked_locations(self) -> Location:
         """Finds locations that haven't met the location_checkers defined in """
@@ -740,7 +838,6 @@ class BalancedZergBot(ZergBotBase):
     def get_closest_to_start_location(self, locations: List[Location]) -> Optional[Location]:
         start_location = self.start_location
         return get_closest_to(locations, start_location)
-
 
     def select_target(self):
         """select a general priority target"""
@@ -958,7 +1055,15 @@ class BalancedZergBot(ZergBotBase):
         # TODO needs work. Zerglings are built instead of any other unit because the bot never gets above 50 minerals
         has_right_mineral_gas_ratio = self.minerals / self.vespene > 1.3 if self.vespene else True
         # not self.state.score.lost_minerals_army + self.state.score.lost_vespene_army > 1200
-        return self.get_has_been_under_attack_recently() or (not self.booming and has_right_mineral_gas_ratio)
+        distance_to_center_map = self.start_location.distance_to(self.game_info.map_center)
+        enemy_is_close = self.known_enemy_units.not_structure.exclude_type(race_worker.values()).closer_than(distance_to_center_map, self.start_location).amount > 2 \
+            or self.estimated_enemy_army_location.distance_to_closest(self.townhalls) < 25
+        if enemy_is_close:
+            print(f'enemy_is_close: {enemy_is_close}')
+        return enemy_is_close or self.get_has_been_under_attack_recently() or (not self.booming and has_right_mineral_gas_ratio)
+
+    def should_build_broodlord(self) -> bool:
+        return self.use_broodlord_strategy and self.can_afford(UnitTypeId.CORRUPTOR) and self.units(UnitTypeId.SPIRE).ready.exists and self.supply_left >= 2
 
     def calculate_minerals_after_seconds(self, seconds_from_now) -> int:
         return self.minerals + (seconds_from_now * self.state.score.collection_rate_minerals)
@@ -1024,36 +1129,6 @@ class BalancedZergBot(ZergBotBase):
             if overlords_to_build > 1:
                 await build_overlord(self, None)
 
-            # for _ in range(overlords_to_build):
-
-        # ! THIS IS BROKEN !
-        # maybe this shouldn't be a loop
-        # for larva in self.units(UnitTypeId.LARVA).ready:
-        #     if self.supply_left < 0:
-        #         return
-        #     # TODO generate these weights more dynamically
-        #     ultralisk_weight = .8
-        #     mutalisk_weight = .7
-        #     hydralisk_weight = .2
-        #     roach_weight = .1
-        #     zergling_weight = .9
-        #     if self.should_build_ultralisk() and random.random() < ultralisk_weight:
-        #         bot_logger.log_action(self, "building ultralisk")
-        #         await self.do(larva.train(
-        #             UnitTypeId.ULTRALISK
-        #         ))
-        #     elif self.should_build_mutalisk() and random.random() < mutalisk_weight:
-        #         bot_logger.log_action(self, "building mutalisk")
-        #         await self.do(larva.train(
-        #             UnitTypeId.MUTALISK))
-        #     elif self.should_build_hydralisk() and random.random() < hydralisk_weight:
-        #         bot_logger.log_action(self, "building hydralisk")
-        #         await self.do(larva.train(UnitTypeId.HYDRALISK))
-        #     elif self.should_build_roach() and random.random() < roach_weight:
-        #         bot_logger.log_action(self, "building roach")
-        #         await self.do(larva.train(UnitTypeId.ROACH))
-        #     elif self.should_build_zergling() and random.random() < zergling_weight:
-        #         await build_zergling(self, larva)
     async def build_military_units(self):
         larvae = self.units(UnitTypeId.LARVA).ready
         if larvae.exists:
@@ -1064,6 +1139,7 @@ class BalancedZergBot(ZergBotBase):
             hydralisk_weight = .2
             roach_weight = .1
             zergling_weight = .9
+            broodlord_weight = .9
             if self.should_build_ultralisk() and random.random() < ultralisk_weight:
                 bot_logger.log_action(self, "building ultralisk")
                 return await self.do(larva.train(
@@ -1081,6 +1157,11 @@ class BalancedZergBot(ZergBotBase):
                 return await self.do(larva.train(UnitTypeId.ROACH))
             if self.should_build_zergling() and random.random() < zergling_weight:
                 return await build_zergling(self, larva)
+            if self.should_build_broodlord() and random.random() < broodlord_weight:
+                ready_corruptors = self.units(UnitTypeId.CORRUPTOR).ready
+                if ready_corruptors.exists:
+                    await self.do(ready_corruptors.first(AbilityId.MORPHTOBROODLORD_BROODLORD))
+                return await self.do(larva.train(UnitTypeId.CORRUPTOR))
 
     def should_build_gas(self) -> bool:
         has_excess_vespene = self.vespene > 1000
@@ -1092,30 +1173,13 @@ class BalancedZergBot(ZergBotBase):
         if self.expansion_count != 0 and self.time > 68:
             ideal_extractor_count += 1
         if self.time > 255:
-            ideal_extractor_count += 2
-        if self.time > 200:
             ideal_extractor_count += 1
         if self.time > 300:
             ideal_extractor_count += 1
         if self.time > 334:
             ideal_extractor_count = math.inf
-        
-        
+
         return extractor_count < ideal_extractor_count
-        # extractors = self.units(UnitTypeId.EXTRACTOR)
-        # extractor_count = extractors.amount
-        # if extractor_count < 1 and self.expansion_count < 1 and self.time > 60:
-        #     return True
-        # elif extractor_count < 2 and self.time > 120:
-        #     return True
-        # elif extractor_count < 3 and self.time > 300:
-        #     return True
-        # elif extractor_count < 4 and self.time > 500:
-        #     return True
-        # elif extractor_count >= 4:
-        #     return True
-        # else:
-        #     return False
 
     def can_build_gas(self) -> bool:
         return self.can_afford(UnitTypeId.EXTRACTOR)
